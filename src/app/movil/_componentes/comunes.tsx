@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { esMandoSesion } from "../../../lib/movilSesion";
 import { useConteoAvisos } from "../_lib/conteoAvisos";
 import { iniciales } from "../_lib/equipo";
 
@@ -112,12 +113,14 @@ const PESTANAS = [
 export function NavInferior() {
   const ruta = usePathname();
   const sinAtender = useConteoAvisos(ruta);
+  // Equipo es de supervisión: un trabajador no lo ve.
+  const pestanas = esMandoSesion() ? PESTANAS : PESTANAS.filter((p) => p.clave !== "equipo");
   return (
     <nav
       className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex px-2 pt-2.5 z-20"
       style={{ paddingBottom: "max(14px, env(safe-area-inset-bottom))" }}
     >
-      {PESTANAS.map((p) => {
+      {pestanas.map((p) => {
         const activa =
           p.href === "/movil" ? ruta === "/movil" : ruta.startsWith(p.href);
         const color = activa ? "#2563eb" : "#94a3b8";

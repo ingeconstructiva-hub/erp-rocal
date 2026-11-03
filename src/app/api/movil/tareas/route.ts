@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../../../../lib/api-auth";
 import {
   corsMovil,
   opcionesMovil,
+  soloMandos,
   verificarMovil,
 } from "../../../../lib/movilAuth";
 
@@ -24,6 +25,8 @@ export async function POST(req: Request) {
   const auth = await verificarMovil(req);
   if (!auth.ok) return auth.respuesta;
   const { usuario, equipoIds } = auth;
+  const sinPermiso = soloMandos(usuario);
+  if (sinPermiso) return sinPermiso;
 
   const b = await req.json().catch(() => ({}));
   const empleadoId = String(b?.empleadoId || "");

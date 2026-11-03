@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/api-auth";
 import { esCronAutorizado, fechaMx, REUNION_ACTIVA } from "../../../../lib/cronAuth";
-import { idsEquipo } from "../../../../lib/movilAuth";
+import { esMando, idsEquipo } from "../../../../lib/movilAuth";
 import { enviarPush, primeraVez } from "../../../../lib/push";
 
 // Resumen de la mañana (Vercel Cron, ver vercel.json: 14:00 UTC = 8:00 México).
-// A cada persona de Gerencia/Coordinación con notificaciones activas le llega
-// UNA notificación con lo de su equipo: por revisar, vencidas, vencen hoy y
-// reuniones de hoy. Si no hay nada, no se manda.
+// A cada persona con notificaciones activas le llega UNA notificación:
+//  - Gerencia/Coordinación: lo de su equipo (por revisar, vencidas, vencen hoy
+//    y reuniones de hoy).
+//  - Trabajadores: lo suyo (vencidas, vencen hoy y sus reuniones de hoy).
+// Si no hay nada, no se manda.
 
 export async function GET(req: Request) {
   if (!esCronAutorizado(req)) {
@@ -27,11 +29,10 @@ export async function GET(req: Request) {
     supabaseAdmin
       .from("empleados")
       .select("id, nombre, nivel, area")
-      .in("id", conPush)
-      .in("nivel", ["Gerencia", "Coordinador"]),
+      .in("id", conPush),
     supabaseAdmin
       .from("tareas")
-      .select("empleado_id, estado, fecha_limite")
+      .select("empleado_id, colaboradores_ids, estado, fecha_limite")
       .neq("estado", "Completada"),
     supabaseAdmin
       .from("reuniones")
@@ -45,10 +46,14 @@ export async function GET(req: Request) {
   for (const d of destinatarios || []) {
     if (!(await primeraVez(`resumen-${hoy}-${d.id}`))) continue;
 
-    const equipo = await idsEquipo(d);
+    const mando = esMando(d.nivel);
+    const equipo = mando ? await idsEquipo(d) : [d.id];
     const enEquipo = (id: string) => !equipo || equipo.includes(id);
-    const suyas = (tareas || []).filter((t) => enEquipo(t.empleado_id));
-    const porRevisar = suyas.filter((t) => (t.estado || "").includes("Revisi")).length;
+    const suyas = (tareas || []).filter(
+      (t) => enEquipo(t.empleado_id) || (!mando && (t.colaboradores_ids || []).includes(d.id)),
+    );
+    // A un trabajador no le sirve "por revisar": eso lo atiende su coordinador.
+    const porRevisar = mando ? suyas.filter((t) => (t.estado || "").includes("Revisi")).length : 0;
     const activas = suyas.filter((t) => !(t.estado || "").includes("Revisi") && t.fecha_limite);
     const vencidas = activas.filter((t) => t.fecha_limite.slice(0, 10) < hoy).length;
     const vencenHoy = activas.filter((t) => t.fecha_limite.slice(0, 10) === hoy).length;
@@ -68,7 +73,7 @@ export async function GET(req: Request) {
 
     await enviarPush([d.id], {
       titulo: `Buenos días, ${d.nombre.split(" ")[0]}`,
-      cuerpo: `Tu equipo hoy: ${partes.join(" · ")}.`,
+      cuerpo: `${mando ? "Tu equipo hoy" : "Para hoy"}: ${partes.join(" · ")}.`,
       url: "/movil/avisos",
       etiqueta: `resumen-${hoy}`,
     });

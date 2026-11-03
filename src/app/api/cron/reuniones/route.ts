@@ -9,6 +9,12 @@ import { enviarPush, primeraVez, revisoresDe } from "../../../../lib/push";
 // "Authorization: Bearer <CRON_SECRET>". `push_enviados` evita repetirlo.
 // Le llega a Gerencia/Coordinación del equipo de los participantes, y a los
 // propios participantes si también usan la app.
+//
+// Como corre cada 10 min, también avisa a cada trabajador de lo suyo:
+//  - tarea nueva asignada (a él o como colaborador)
+//  - su entrega fue aprobada o le pidieron correcciones
+// Las tareas se asignan y revisan desde varios lados (web, app), así que en
+// vez de engancharse a cada uno se buscan los cambios recientes aquí.
 
 const VENTANA_MIN = 30;
 
@@ -43,11 +49,8 @@ export async function GET(req: Request) {
     reuniones.set(clave, previa);
   });
 
-  // Para reuniones de todo el equipo: toda Gerencia y Coordinación.
-  const { data: mandos } = await supabaseAdmin
-    .from("empleados")
-    .select("id")
-    .in("nivel", ["Gerencia", "Coordinador"]);
+  // Reuniones de todo el equipo: a todos (cada quien solo si tiene la app).
+  const { data: todosLosEmpleados } = await supabaseAdmin.from("empleados").select("id");
 
   let enviadas = 0;
   for (const [clave, r] of reuniones) {
@@ -55,7 +58,7 @@ export async function GET(req: Request) {
 
     const destinatarios = new Set<string>(r.personas);
     if (r.creador) destinatarios.add(r.creador);
-    if (r.todos) (mandos || []).forEach((m) => destinatarios.add(m.id));
+    if (r.todos) (todosLosEmpleados || []).forEach((m) => destinatarios.add(m.id));
     for (const p of r.personas) (await revisoresDe(p)).forEach((id) => destinatarios.add(id));
 
     const minutos = Math.max(1, Math.round((new Date(r.inicio).getTime() - ahora.getTime()) / 60000));
@@ -68,5 +71,57 @@ export async function GET(req: Request) {
     enviadas++;
   }
 
-  return NextResponse.json({ enviadas });
+  const tareas = await avisarTareas(ahora);
+
+  return NextResponse.json({ enviadas, tareas });
+}
+
+const VENTANA_TAREAS_MIN = 30;
+
+async function avisarTareas(ahora: Date) {
+  const desde = new Date(ahora.getTime() - VENTANA_TAREAS_MIN * 60 * 1000).toISOString();
+  const [{ data: nuevas }, { data: decididas }] = await Promise.all([
+    supabaseAdmin
+      .from("tareas")
+      .select("id, titulo, empleado_id, colaboradores_ids, fecha_limite")
+      .gte("created_at", desde),
+    supabaseAdmin
+      .from("tareas")
+      .select("id, titulo, empleado_id, revision_resultado, revision_comentario, revision_fecha")
+      .gte("revision_fecha", desde)
+      .not("revision_resultado", "is", null),
+  ]);
+
+  let enviados = 0;
+  for (const t of nuevas || []) {
+    if (!(await primeraVez(`tarea-nueva-${t.id}`))) continue;
+    const entrega = t.fecha_limite ? ` · Entrega: ${fechaCorta(t.fecha_limite)}` : "";
+    await enviarPush([t.empleado_id, ...(t.colaboradores_ids || [])], {
+      titulo: "Nueva tarea asignada",
+      cuerpo: `${t.titulo}${entrega}`,
+      url: `/movil/tarea/${t.id}`,
+      etiqueta: `tarea-nueva-${t.id}`,
+    });
+    enviados++;
+  }
+
+  for (const t of decididas || []) {
+    if (!(await primeraVez(`decision-${t.id}-${t.revision_fecha}`))) continue;
+    const aprobada = t.revision_resultado === "Aprobado";
+    const comentario = t.revision_comentario ? ` — “${t.revision_comentario}”` : "";
+    await enviarPush([t.empleado_id], {
+      titulo: aprobada ? "Tu entrega fue aprobada" : "Te pidieron correcciones",
+      cuerpo: `${t.titulo}${comentario}`,
+      url: `/movil/tarea/${t.id}`,
+      etiqueta: `decision-${t.id}`,
+    });
+    enviados++;
+  }
+  return enviados;
+}
+
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function fechaCorta(valor: string) {
+  const [, mm, dd] = valor.slice(0, 10).split("-");
+  return `${Number(dd)} ${MESES[Number(mm) - 1] || ""}`;
 }

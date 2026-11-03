@@ -6,6 +6,7 @@ import { renderRich } from "../../../../../lib/textoRico";
 import { Archivo, Avatar, Contactar, DeslizarParaActualizar, ErrorCarga } from "../../../_componentes/comunes";
 import { EsqueletoDetalle } from "../../../_componentes/esqueletos";
 import { esPorRevisar, fechaCorta, urgencia } from "../../../_lib/equipo";
+import { esMandoSesion } from "../../../../../lib/movilSesion";
 import {
   especialidadVisible,
   fechaHora,
@@ -71,7 +72,7 @@ export default function SeguimientoPage() {
       ) : (
         <>
           <Contenido tarea={datos.tarea} hilo={datos.hilo} />
-          {esPorRevisar(datos.tarea) && (
+          {esPorRevisar(datos.tarea) && esMandoSesion() && (
             <>
               {/* Espacio para que la barra no tape el final del hilo */}
               <div className="h-20" />

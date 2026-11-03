@@ -8,6 +8,7 @@ import { EsqueletoAvisos } from "../../_componentes/esqueletos";
 import { apiMovil, SesionExpirada } from "../../_lib/api";
 import { fechaCorta, primerNombre, useRefrescoAlAvisar } from "../../_lib/equipo";
 import { fechaHora } from "../../_lib/tarea";
+import { esMandoSesion } from "../../../../lib/movilSesion";
 
 interface PersonaAviso {
   id: string;
@@ -38,6 +39,8 @@ export default function AvisosPage() {
   const router = useRouter();
   const [datos, setDatos] = useState<DatosAvisos | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Trabajador: los avisos son de sus propias tareas y reuniones.
+  const [mando] = useState(esMandoSesion);
 
   const cargar = useCallback(async () => {
     try {
@@ -62,8 +65,9 @@ export default function AvisosPage() {
     return (id: string) => m[id];
   }, [datos]);
 
+  // Lo que espera revisión no es "por atender" para el trabajador: ya entregó.
   const total = datos
-    ? datos.porRevisar.length + datos.porVencer.length + datos.reuniones.length + (datos.nuevas?.length || 0)
+    ? (mando ? datos.porRevisar.length : 0) + datos.porVencer.length + datos.reuniones.length + (datos.nuevas?.length || 0)
     : 0;
 
   return (
@@ -89,15 +93,32 @@ export default function AvisosPage() {
             <div className="text-center py-14">
               <p className="text-[15px] font-semibold text-slate-700">Todo al día</p>
               <p className="text-sm text-slate-500 mt-1">
-                Sin entregas por revisar ni tareas por vencer en tu equipo.
+                {mando
+                  ? "Sin entregas por revisar ni tareas por vencer en tu equipo."
+                  : "No tienes tareas por vencer ni reuniones próximas."}
               </p>
             </div>
           )}
 
           {/* Entregas por revisar */}
-          {datos.porRevisar.length > 0 && <Titulo texto="Por revisar" />}
+          {datos.porRevisar.length > 0 && <Titulo texto={mando ? "Por revisar" : "En revisión"} />}
           {datos.porRevisar.map((a) => {
             const p = persona(a.empleadoId);
+            if (!mando) {
+              return (
+                <Link key={`rev-${a.tareaId}`} href={`/movil/tarea/${a.tareaId}`}>
+                  <Tarjeta tono="azul" icono="revision">
+                    <p className="text-sm font-semibold text-slate-900 leading-snug">
+                      Enviaste esta tarea a revisión
+                    </p>
+                    <p className="text-[13px] text-slate-500 mt-0.5 leading-snug">{a.titulo}</p>
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      Esperando respuesta{a.fecha ? ` · ${hace(a.fecha)}` : ""}
+                    </p>
+                  </Tarjeta>
+                </Link>
+              );
+            }
             return (
               <Tarjeta key={`rev-${a.tareaId}`} tono="azul" icono="revision">
                 <p className="text-sm font-semibold text-slate-900 leading-snug">
@@ -153,7 +174,7 @@ export default function AvisosPage() {
                     {vencida ? `Venció el ${fechaCorta(a.fechaLimite)}` : hoy ? "Vence hoy" : `Vence el ${fechaCorta(a.fechaLimite)}`}: {a.titulo}
                   </p>
                   <p className="text-[13px] text-slate-500 mt-0.5">
-                    {p ? primerNombre(p.nombre) : "El responsable"} va en {a.avance}%.
+                    {mando ? `${p ? primerNombre(p.nombre) : "El responsable"} va` : "Vas"} en {a.avance}%.
                   </p>
                 </Tarjeta>
               </Link>
@@ -199,7 +220,7 @@ export default function AvisosPage() {
                     {d.aprobada ? "Entrega aprobada" : "Se pidieron correcciones"}
                   </p>
                   <p className="text-[13px] text-slate-500 mt-0.5 leading-snug">
-                    {p ? `${primerNombre(p.nombre)} · ` : ""}
+                    {mando && p ? `${primerNombre(p.nombre)} · ` : ""}
                     {d.titulo}
                   </p>
                   {d.comentario && (

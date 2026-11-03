@@ -29,7 +29,14 @@ export async function GET(req: Request) {
         "id, titulo, descripcion, estado, prioridad, fecha_limite, porcentaje_avance, empleado_id, proyecto_id, colaboradores_ids, revision_resultado",
       )
       .neq("estado", "Completada");
-    if (equipoIds) qTareas = qTareas.in("empleado_id", equipoIds);
+    // Un trabajador ve lo suyo: lo que tiene a cargo y donde es colaborador.
+    if (!usuario.esMando) {
+      qTareas = qTareas.or(
+        `empleado_id.eq.${usuario.id},colaboradores_ids.cs.{${usuario.id}}`,
+      );
+    } else if (equipoIds) {
+      qTareas = qTareas.in("empleado_id", equipoIds);
+    }
 
     const [empleados, tareas, proyectos] = await Promise.all([
       qEmpleados,

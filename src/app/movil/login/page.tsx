@@ -6,8 +6,8 @@ import { guardarSesion } from "../../../lib/movilSesion";
 import { VerContrasena } from "../../../components/VerContrasena";
 
 // Login de la PWA — pasa por /api/auth/login, el mismo endpoint que ya usa la
-// extensión de Chrome (JWT propio). Manda `app: "movil"` para que el servidor
-// deje entrar solo a Gerencia y Coordinadores.
+// extensión de Chrome (JWT propio). Entra cualquier integrante; lo que ve cada
+// quien lo decide el servidor según su nivel.
 export default function MovilLoginPage() {
   const router = useRouter();
   const [userInput, setUserInput] = useState("");
@@ -64,7 +64,7 @@ export default function MovilLoginPage() {
       <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-auto">
         <h1 className="text-lg font-semibold text-slate-900">Iniciar sesión</h1>
         <p className="text-[13px] text-slate-500 mt-1">
-          Supervisa a tu equipo y revisa entregas desde el celular.
+          Consulta tus tareas y reuniones y recibe recordatorios en el celular.
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-5">

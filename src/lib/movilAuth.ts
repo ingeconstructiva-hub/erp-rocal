@@ -2,14 +2,18 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "./api-auth";
 import { verifyAuthToken } from "./auth";
 
-// Autorización de la API de la PWA móvil (/api/movil/*). La app es solo para
-// Gerencia y Coordinadores; el alcance de lo que ve cada uno se decide aquí,
-// en el servidor, nunca en el navegador:
+// Autorización de la API de la PWA móvil (/api/movil/*). El alcance de lo que
+// ve cada uno se decide aquí, en el servidor, nunca en el navegador:
 //  - Gerencia: todo el equipo.
 //  - Coordinador: las personas que comparten al menos un área con él
 //    (`empleados.area` es text[]), más él mismo.
+//  - Cualquier otro nivel (trabajadores, practicantes…): solo lo suyo. Para
+//    ellos la app es de consulta y recordatorios: ven sus tareas y reuniones,
+//    pero no asignan ni revisan (ver `soloMandos`).
 
 export const NIVELES_MOVIL = ["Gerencia", "Coordinador"];
+export const esMando = (nivel: string | null | undefined) =>
+  NIVELES_MOVIL.includes(nivel || "");
 
 export const corsMovil = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +26,7 @@ export interface UsuarioMovil {
   nombre: string;
   nivel: string;
   area: string[];
+  esMando: boolean;
 }
 
 export type ResultadoMovil =
@@ -45,18 +50,29 @@ export async function verificarMovil(req: Request): Promise<ResultadoMovil> {
     .maybeSingle();
 
   if (!emp) return rechazar("Sesión no válida o expirada", 401);
-  if (!NIVELES_MOVIL.includes(emp.nivel)) {
-    return rechazar("La app móvil es solo para coordinadores y gerencia.", 403);
-  }
 
   const usuario: UsuarioMovil = {
     id: emp.id,
     nombre: emp.nombre,
     nivel: emp.nivel,
     area: emp.area || [],
+    esMando: esMando(emp.nivel),
   };
 
-  return { ok: true, usuario, equipoIds: await idsEquipo(usuario) };
+  return {
+    ok: true,
+    usuario,
+    equipoIds: usuario.esMando ? await idsEquipo(usuario) : [usuario.id],
+  };
+}
+
+// Para las acciones de supervisión (asignar, revisar entregas).
+export function soloMandos(usuario: UsuarioMovil): NextResponse | null {
+  if (usuario.esMando) return null;
+  return NextResponse.json(
+    { error: "Solo coordinadores y gerencia pueden hacer esto." },
+    { status: 403, headers: corsMovil },
+  );
 }
 
 // Ids de empleados que puede ver alguien de Gerencia/Coordinación; null = todos.

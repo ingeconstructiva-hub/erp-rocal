@@ -3,12 +3,14 @@ import { supabaseAdmin } from "../../../../lib/api-auth";
 import {
   corsMovil,
   opcionesMovil,
+  soloMandos,
   verificarMovil,
 } from "../../../../lib/movilAuth";
 import { esArquitecto, hoyMx } from "../../../../lib/enObra";
 
 // Quién está en obra hoy (dentro del alcance del usuario) y cambio de estado de
-// un arquitecto. Solo entran Gerencia y Coordinación (ya lo valida verificarMovil).
+// un arquitecto. Ver quién está en obra lo puede cualquiera (dentro de su alcance); cambiar el
+// estado, solo Gerencia y Coordinación.
 //  GET  → { enObra: [ids] }
 //  POST { empleadoId, enObra } → marca o quita el estado "en obra" de hoy.
 
@@ -34,7 +36,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const auth = await verificarMovil(req);
   if (!auth.ok) return auth.respuesta;
-  const { equipoIds } = auth;
+  const { usuario, equipoIds } = auth;
+  const sinPermiso = soloMandos(usuario);
+  if (sinPermiso) return sinPermiso;
 
   const b = await req.json().catch(() => ({}));
   const empleadoId = String(b?.empleadoId || "");

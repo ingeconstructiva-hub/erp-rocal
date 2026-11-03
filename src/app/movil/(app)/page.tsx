@@ -6,6 +6,7 @@ import { Avatar, DeslizarParaActualizar, ErrorCarga } from "../_componentes/comu
 import { EsqueletoTareas } from "../_componentes/esqueletos";
 import { useConteoLeer } from "../_lib/conteoAvisos";
 import { ProximasReuniones } from "../_componentes/ProximasReuniones";
+import { esMandoSesion } from "../../../lib/movilSesion";
 import {
   esPorRevisar,
   fechaCorta,
@@ -30,7 +31,10 @@ function saludo() {
 export default function TareasEquipoPage() {
   const { datos, error, recargar } = useDatosEquipo();
   const sinAtender = useConteoLeer();
-  const [vista, setVista] = useState<Vista>("equipo");
+  // Un trabajador solo ve lo suyo: sin "Mi equipo", sin revisar ni asignar.
+  const [mando] = useState(esMandoSesion);
+  const [vistaElegida, setVista] = useState<Vista>("equipo");
+  const vista: Vista = mando ? vistaElegida : "mias";
   const [agrupar, setAgrupar] = useState<Agrupar>("urgentes");
 
   const porId = useMemo(() => {
@@ -75,7 +79,7 @@ export default function TareasEquipoPage() {
   if (!datos) return <EsqueletoTareas />;
 
   const yo = porId[datos.yo.id];
-  const porRevisar = tareasEquipo.filter(esPorRevisar).length;
+  const porRevisar = mando ? tareasEquipo.filter(esPorRevisar).length : 0;
   const vencidas = lista.filter((t) => urgencia(t) === "vencida").length;
 
   return (
@@ -113,6 +117,7 @@ export default function TareasEquipoPage() {
         </div>
 
         {/* Mi equipo / Mis tareas */}
+        {mando && (
         <div className="flex bg-slate-100 rounded-[10px] p-[3px] mt-3">
           {(
             [
@@ -134,6 +139,7 @@ export default function TareasEquipoPage() {
             </button>
           ))}
         </div>
+        )}
       </header>
 
       {/* Resumen */}
@@ -155,7 +161,9 @@ export default function TareasEquipoPage() {
             ["persona", "Por persona"],
             ["proyecto", "Por proyecto"],
           ] as const
-        ).map(([clave, texto]) => (
+        )
+          .filter(([clave]) => mando || clave !== "persona")
+          .map(([clave, texto]) => (
           <button
             key={clave}
             type="button"
@@ -193,6 +201,7 @@ export default function TareasEquipoPage() {
                 tarea={t}
                 responsable={porId[t.empleado_id]}
                 mostrarResponsable={vista === "equipo"}
+                puedeRevisar={mando}
               />
             ))}
           </section>
@@ -200,6 +209,7 @@ export default function TareasEquipoPage() {
       </div>
 
       {/* Asignar tarea */}
+      {mando && (
       <Link
         href="/movil/asignar"
         className="fixed right-4 bottom-24 z-10 h-[52px] pl-3.5 pr-[18px] rounded-full bg-blue-600 text-white text-[15px] font-semibold flex items-center gap-1.5 shadow-[0_8px_20px_rgba(37,99,235,0.35)]"
@@ -209,6 +219,7 @@ export default function TareasEquipoPage() {
         </svg>
         Asignar
       </Link>
+      )}
       {/* Espacio para que el botón no tape la última tarjeta */}
       <div className="h-16" />
     </DeslizarParaActualizar>
@@ -245,12 +256,17 @@ function TarjetaTarea({
   tarea: t,
   responsable,
   mostrarResponsable,
+  puedeRevisar,
 }: {
   tarea: TareaMovil;
   responsable?: EmpleadoMovil;
   mostrarResponsable: boolean;
+  puedeRevisar: boolean;
 }) {
   const revisar = esPorRevisar(t);
+  // Para el trabajador su tarea "en revisión" solo espera respuesta: se abre
+  // el seguimiento, no la pantalla de revisar.
+  const abrirRevision = revisar && puedeRevisar;
   const urg = urgencia(t);
   const avance = Math.max(0, Math.min(100, t.porcentaje_avance ?? 0));
   const borde = revisar
@@ -261,7 +277,7 @@ function TarjetaTarea({
 
   return (
     <Link
-      href={revisar ? `/movil/tarea/${t.id}/revisar` : `/movil/tarea/${t.id}`}
+      href={abrirRevision ? `/movil/tarea/${t.id}/revisar` : `/movil/tarea/${t.id}`}
       className={`block bg-white border rounded-xl px-3.5 py-3 active:bg-slate-50 ${borde}`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -285,7 +301,7 @@ function TarjetaTarea({
 
         {revisar ? (
           <span className="shrink-0 text-[10px] font-semibold text-white bg-blue-600 px-2 py-1 rounded-md">
-            Por revisar
+            {puedeRevisar ? "Por revisar" : "En revisión"}
           </span>
         ) : urg ? (
           <span className="shrink-0 text-[10px] font-semibold text-white bg-rose-600 px-2 py-1 rounded-md">

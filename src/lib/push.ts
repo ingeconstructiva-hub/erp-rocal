@@ -1,8 +1,8 @@
 import webpush from "web-push";
 import { supabaseAdmin } from "./api-auth";
 
-// Notificaciones push de la PWA móvil (solo Gerencia y Coordinadores las
-// reciben, porque son los únicos que usan la app). Las suscripciones viven en
+// Notificaciones push de la PWA móvil (las recibe quien tenga la app y las
+// haya activado en su perfil). Las suscripciones viven en
 // `push_suscripciones` (una por teléfono/navegador) y `push_enviados` evita
 // mandar dos veces el mismo recordatorio cuando lo dispara un cron.
 

@@ -30,7 +30,7 @@ const noEncontrada = () =>
 export async function GET(req: Request, ctx: RouteContext<"/api/movil/tareas/[id]">) {
   const auth = await verificarMovil(req);
   if (!auth.ok) return auth.respuesta;
-  const { equipoIds } = auth;
+  const { usuario, equipoIds } = auth;
 
   const tareaId = Number((await ctx.params).id);
   if (!Number.isInteger(tareaId)) return noEncontrada();
@@ -45,7 +45,8 @@ export async function GET(req: Request, ctx: RouteContext<"/api/movil/tareas/[id
       .maybeSingle();
     if (error) throw error;
     // Fuera de su alcance se responde igual que si no existiera.
-    if (!tarea || (equipoIds && !equipoIds.includes(tarea.empleado_id))) {
+    const colabora = (tarea?.colaboradores_ids || []).includes(usuario.id);
+    if (!tarea || (equipoIds && !equipoIds.includes(tarea.empleado_id) && !colabora)) {
       return noEncontrada();
     }
 
