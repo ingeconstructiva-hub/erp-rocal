@@ -108,6 +108,12 @@ const getNivelRecompensa = (puntos: number) => {
   return { actual, siguiente, progresoPct };
 };
 
+interface Subtarea {
+  id: number | string;
+  titulo: string;
+  completada: boolean;
+}
+
 interface Task {
   id: number | string;
   title: string;
@@ -126,6 +132,7 @@ interface Task {
   dependsOnTaskTitle?: string;
   collaborators?: { id: string; name: string }[];
   collaboratorsNames?: string[];
+  subtareas?: Subtarea[];
 }
 
 interface LegalDocument {
@@ -629,7 +636,9 @@ export default function AdminDashboard() {
     descripcion: string;
     prioridad: string;
     fechaLimite: string;
+    subtareas: Subtarea[];
   } | null>(null);
+  const [nuevaSubtarea, setNuevaSubtarea] = useState("");
   const [guardandoTarea, setGuardandoTarea] = useState(false);
 
   const getDocFolder = (docName: string): string => {
@@ -687,6 +696,21 @@ export default function AdminDashboard() {
       const lineasPorEmpleado: Record<string, string[]> = {};
       (asignacionesData || []).forEach((a: any) => {
         (lineasPorEmpleado[a.empleado_id] ||= []).push(a.proyecto_id);
+      });
+
+      // Subtareas (checklist) de las tareas. Sin la tabla todavía, sin subtareas.
+      const { data: subtareasData } = await supabase
+        .from("tarea_subtareas")
+        .select("id, tarea_id, titulo, completada, orden")
+        .order("orden")
+        .order("id");
+      const subtareasPorTarea: Record<string, Subtarea[]> = {};
+      (subtareasData || []).forEach((s: any) => {
+        (subtareasPorTarea[String(s.tarea_id)] ||= []).push({
+          id: s.id,
+          titulo: s.titulo,
+          completada: !!s.completada,
+        });
       });
 
       // B) Empleados
@@ -765,6 +789,7 @@ export default function AdminDashboard() {
                   ?.nombre || "Administrador",
               isCritical: Boolean(t.es_critica),
               slackDays: t.holgura_dias ?? 0,
+              subtareas: subtareasPorTarea[String(t.id)] || [],
               dependsOnTaskId: t.depende_de_tarea_id,
               dependsOnTaskTitle: parentTask?.titulo,
               collaborators: collabList,
@@ -1587,6 +1612,12 @@ export default function AdminDashboard() {
       alert("No se pudo cargar la tarea: " + (error?.message || ""));
       return;
     }
+    const { data: subsData } = await supabase
+      .from("tarea_subtareas")
+      .select("id, titulo, completada")
+      .eq("tarea_id", taskId)
+      .order("orden")
+      .order("id");
     setEditTarea({
       id: data.id,
       titulo: data.titulo || "",
@@ -1595,7 +1626,107 @@ export default function AdminDashboard() {
       fechaLimite: data.fecha_limite
         ? String(data.fecha_limite).slice(0, 10)
         : "",
+      subtareas: (subsData || []).map((s: any) => ({
+        id: s.id,
+        titulo: s.titulo,
+        completada: !!s.completada,
+      })),
     });
+    setNuevaSubtarea("");
+  };
+
+  // El avance de una tarea con subtareas sale de cuántas van hechas.
+  const sincronizarAvance = async (
+    tareaId: string | number,
+    subs: Subtarea[],
+  ) => {
+    if (subs.length === 0) return;
+    const avance = Math.round(
+      (subs.filter((s) => s.completada).length / subs.length) * 100,
+    );
+    await supabase
+      .from("tareas")
+      .update({ porcentaje_avance: avance })
+      .eq("id", tareaId);
+  };
+
+  const cerrarEditTarea = () => {
+    setEditTarea(null);
+    fetchDashboardData();
+  };
+
+  const agregarSubtarea = async () => {
+    const titulo = nuevaSubtarea.trim();
+    if (!editTarea || !titulo) return;
+    const { data, error } = await supabase
+      .from("tarea_subtareas")
+      .insert({
+        tarea_id: editTarea.id,
+        titulo,
+        orden: editTarea.subtareas.length,
+      })
+      .select("id, titulo, completada")
+      .single();
+    if (error || !data) {
+      alert("No se pudo agregar la subtarea: " + (error?.message || ""));
+      return;
+    }
+    const subtareas = [
+      ...editTarea.subtareas,
+      { id: data.id, titulo: data.titulo, completada: !!data.completada },
+    ];
+    setEditTarea({ ...editTarea, subtareas });
+    setNuevaSubtarea("");
+    await sincronizarAvance(editTarea.id, subtareas);
+  };
+
+  const alternarSubtarea = async (
+    id: string | number,
+    completada: boolean,
+    enModal: boolean,
+  ) => {
+    const { error } = await supabase
+      .from("tarea_subtareas")
+      .update({ completada })
+      .eq("id", id);
+    if (error) {
+      alert("No se pudo actualizar la subtarea: " + error.message);
+      return;
+    }
+    if (enModal && editTarea) {
+      const subtareas = editTarea.subtareas.map((s) =>
+        s.id === id ? { ...s, completada } : s,
+      );
+      setEditTarea({ ...editTarea, subtareas });
+      await sincronizarAvance(editTarea.id, subtareas);
+      return;
+    }
+    // Desde la tarjeta: se busca la tarea dueña de la subtarea.
+    const tarea = selectedEmployee?.taskHistory.find((t) =>
+      t.subtareas?.some((s) => s.id === id),
+    );
+    if (tarea?.subtareas) {
+      await sincronizarAvance(
+        tarea.id,
+        tarea.subtareas.map((s) => (s.id === id ? { ...s, completada } : s)),
+      );
+    }
+    await fetchDashboardData();
+  };
+
+  const quitarSubtarea = async (id: string | number) => {
+    if (!editTarea) return;
+    const { error } = await supabase
+      .from("tarea_subtareas")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      alert("No se pudo quitar la subtarea: " + error.message);
+      return;
+    }
+    const subtareas = editTarea.subtareas.filter((s) => s.id !== id);
+    setEditTarea({ ...editTarea, subtareas });
+    await sincronizarAvance(editTarea.id, subtareas);
   };
 
   const handleGuardarTarea = async (e: React.FormEvent) => {
@@ -2381,6 +2512,10 @@ export default function AdminDashboard() {
                                 task.title,
                                 task.dueDate,
                               )
+                            }
+                            subtareas={task.subtareas}
+                            onToggleSubtarea={(id, hecha) =>
+                              alternarSubtarea(id, hecha, false)
                             }
                             onEdit={() => abrirEditarTarea(task.id)}
                           />
@@ -3574,12 +3709,12 @@ export default function AdminDashboard() {
 
       {/* ✏️ MODAL DE EDICIÓN DE TAREA */}
       {editTarea && (
-        <ModalOverlay onClose={() => setEditTarea(null)}>
+        <ModalOverlay onClose={cerrarEditTarea}>
           <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-slate-100 p-3 space-y-2">
             <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
               <h3 className="text-sm font-bold text-slate-900">Editar tarea</h3>
               <button
-                onClick={() => setEditTarea(null)}
+                onClick={cerrarEditTarea}
                 className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <Icon name="x" size={16} />
@@ -3652,10 +3787,82 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {/* Subtareas: lo que ya está hecho y lo que falta */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                  Subtareas
+                  {editTarea.subtareas.length > 0 &&
+                    ` · ${editTarea.subtareas.filter((s) => s.completada).length}/${editTarea.subtareas.length} hechas`}
+                </label>
+                {editTarea.subtareas.length > 0 && (
+                  <ul className="space-y-0.5 mb-1.5 max-h-40 overflow-y-auto">
+                    {editTarea.subtareas.map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={s.completada}
+                          onChange={(e) =>
+                            alternarSubtarea(s.id, e.target.checked, true)
+                          }
+                          className="accent-emerald-600 cursor-pointer"
+                        />
+                        <span
+                          className={`flex-1 min-w-0 break-words ${
+                            s.completada
+                              ? "text-slate-400 line-through"
+                              : "text-slate-800"
+                          }`}
+                        >
+                          {s.titulo}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => quitarSubtarea(s.id)}
+                          title="Quitar subtarea"
+                          className="text-slate-400 hover:text-red-600 cursor-pointer"
+                        >
+                          <Icon name="x" size={13} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={nuevaSubtarea}
+                    onChange={(e) => setNuevaSubtarea(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        agregarSubtarea();
+                      }
+                    }}
+                    placeholder="Agregar subtarea y Enter"
+                    className="flex-1 min-w-0 border border-slate-300 rounded-xl p-1.5 text-slate-900 bg-white outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={agregarSubtarea}
+                    disabled={!nuevaSubtarea.trim()}
+                    className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-semibold px-2.5 rounded-xl cursor-pointer"
+                  >
+                    Agregar
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Se guardan al momento. El avance de la tarea se calcula con
+                  las que van hechas.
+                </p>
+              </div>
+
               <div className="flex gap-1 pt-1.5 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setEditTarea(null)}
+                  onClick={cerrarEditTarea}
                   className="flex-1 bg-slate-100 text-slate-700 py-1.5 rounded-xl font-semibold"
                 >
                   Cancelar

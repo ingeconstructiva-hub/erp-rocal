@@ -18,6 +18,8 @@ export interface TaskCardProps {
   isCritical?: boolean;
   slackDays?: number;
   onRequestExtension?: () => void;
+  subtareas?: { id: number | string; titulo: string; completada: boolean }[];
+  onToggleSubtarea?: (id: number | string, completada: boolean) => void;
   onEdit?: () => void;
 }
 
@@ -35,6 +37,8 @@ export default function TaskCard({
   isCritical,
   slackDays,
   onRequestExtension,
+  subtareas = [],
+  onToggleSubtarea,
   onEdit,
 }: TaskCardProps) {
   const [abierta, setAbierta] = useState(false);
@@ -82,6 +86,11 @@ export default function TaskCard({
           <h4 className="font-semibold text-slate-900 text-[13px] mt-1 leading-snug">{title}</h4>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+          {subtareas.length > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500" title="Subtareas hechas">
+              <Icon name="check-circle" size={11} /> {subtareas.filter((s) => s.completada).length}/{subtareas.length}
+            </span>
+          )}
           {dueDate && (
             <span className="hidden sm:inline font-mono text-[10px] text-slate-500">{dueDate}</span>
           )}
@@ -125,6 +134,35 @@ export default function TaskCard({
           />
         </div>
       </div>
+
+      {/* Subtareas: lo que ya se hizo y lo que falta */}
+      {subtareas.length > 0 && (
+        <div className="space-y-1">
+          <span className={`${label} flex items-center gap-1`}>
+            <Icon name="list" size={11} /> Subtareas ({subtareas.filter((s) => s.completada).length}/{subtareas.length})
+          </span>
+          <ul className="space-y-0.5">
+            {subtareas.map((s) => (
+              <li key={s.id}>
+                <label
+                  className={`flex items-start gap-1.5 text-xs rounded-md px-1 py-0.5 ${
+                    onToggleSubtarea ? 'cursor-pointer hover:bg-slate-50' : ''
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={s.completada}
+                    disabled={!onToggleSubtarea}
+                    onChange={(e) => onToggleSubtarea?.(s.id, e.target.checked)}
+                    className="mt-0.5 accent-emerald-600"
+                  />
+                  <span className={s.completada ? 'text-slate-400 line-through' : 'text-slate-800'}>{s.titulo}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Meta información */}
       <div className="grid grid-cols-2 gap-1.5 pt-1.5 text-[11px] border-t border-slate-100">

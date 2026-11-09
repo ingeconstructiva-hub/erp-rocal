@@ -32,6 +32,7 @@ interface Tarea {
   revision_por: string | null;
   revision_fecha: string | null;
   depende_de_tarea_id: number | null;
+  subtareas?: { id: number | string; titulo: string; completada: boolean }[];
   proyectos?: { nombre: string } | null;
 }
 
@@ -383,6 +384,23 @@ function TarjetaTarea({
     setAvance(t.porcentaje_avance ?? 0);
   }, [t.porcentaje_avance]);
 
+  const subs = t.subtareas || [];
+  const hechas = subs.filter((x) => x.completada).length;
+
+  const palomear = async (id: number | string, completada: boolean) => {
+    setErrorAvance(null);
+    try {
+      await apiMovil("/api/subtareas", {
+        method: "PATCH",
+        body: JSON.stringify({ id, completada }),
+      });
+      onAvance();
+    } catch (e) {
+      if (e instanceof SesionExpirada) return onSalir();
+      setErrorAvance((e as Error).message);
+    }
+  };
+
   const guardarAvance = async () => {
     setGuardando(true);
     setErrorAvance(null);
@@ -482,7 +500,51 @@ function TarjetaTarea({
         </span>
       </div>
 
-      {tipo === "activa" && (
+      {subs.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-slate-500">
+            <span>
+              Subtareas · {hechas}/{subs.length}
+            </span>
+            <span className="font-mono text-slate-800">
+              {t.porcentaje_avance ?? 0}%
+            </span>
+          </div>
+          <ul className="space-y-0.5">
+            {subs.map((x) => (
+              <li key={x.id}>
+                <label
+                  className={`flex items-start gap-1.5 text-xs rounded-md px-1 py-0.5 ${
+                    tipo === "activa" ? "cursor-pointer hover:bg-slate-50" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={x.completada}
+                    disabled={tipo !== "activa"}
+                    onChange={(e) => palomear(x.id, e.target.checked)}
+                    className="mt-0.5 accent-emerald-600"
+                  />
+                  <span
+                    className={
+                      x.completada
+                        ? "text-slate-400 line-through"
+                        : "text-slate-800"
+                    }
+                  >
+                    {x.titulo}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {errorAvance && (
+            <p className="text-[11px] text-red-600">{errorAvance}</p>
+          )}
+        </div>
+      )}
+
+      {tipo === "activa" && subs.length === 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[11px] text-slate-500">
             <span>Avance</span>

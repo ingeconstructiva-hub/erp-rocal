@@ -36,6 +36,23 @@ export async function GET(req: NextRequest) {
     const { data: tareas, error } = await query;
     if (error) throw error;
 
+    // Subtareas (checklist) de cada tarea. Si la tabla aún no existe, sin ellas.
+    const subtareasPorTarea: Record<string, any[]> = {};
+    if (tareas && tareas.length > 0) {
+      const { data: subs } = await supabaseAdmin
+        .from('tarea_subtareas')
+        .select('id, tarea_id, titulo, completada, orden')
+        .in('tarea_id', tareas.map((t: any) => t.id))
+        .order('orden')
+        .order('id');
+      (subs || []).forEach((s: any) => {
+        (subtareasPorTarea[String(s.tarea_id)] ||= []).push(s);
+      });
+    }
+    (tareas || []).forEach((t: any) => {
+      t.subtareas = subtareasPorTarea[String(t.id)] || [];
+    });
+
     // Puntos de recompensa actuales — se otorgan por trigger en Supabase al
     // completar tareas, así que se refrescan aquí en cada carga (la extensión ya
     // llama a este endpoint al cambiar de pestaña, no hace falta un endpoint aparte).
