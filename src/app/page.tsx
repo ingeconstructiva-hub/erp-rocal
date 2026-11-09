@@ -213,13 +213,7 @@ const DOCUMENTOS_CATALOGO = [
   "Carta de Confidencialidad (NDA)",
   "Contrato por tiempo definido",
   "Contrato por tiempo indeterminado",
-  "Acta de nacimiento",
-  "CURP",
   "Comprobante de domicilio",
-  "Constancia de situación fiscal (RFC)",
-  "Número de seguridad social (NSS)",
-  "Comprobante de estudios",
-  "Carta de presentación / aceptación",
 ];
 
 function ComboConAlta({
