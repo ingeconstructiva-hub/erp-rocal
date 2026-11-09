@@ -631,6 +631,8 @@ export default function AdminDashboard() {
     prioridad: string;
     fechaLimite: string;
     subtareas: Subtarea[];
+    empleadoId: string;
+    colaboradores: string[];
   } | null>(null);
   const [nuevaSubtarea, setNuevaSubtarea] = useState("");
   const [guardandoTarea, setGuardandoTarea] = useState(false);
@@ -1249,11 +1251,7 @@ export default function AdminDashboard() {
           selectedCollaboratorIds.length > 0 ? selectedCollaboratorIds : null,
       };
 
-      const { data: nuevaTarea, error } = await supabase
-        .from("tareas")
-        .insert(taskPayload)
-        .select("id")
-        .single();
+      const { error } = await supabase.from("tareas").insert(taskPayload);
 
       if (error) throw error;
 
@@ -1262,59 +1260,8 @@ export default function AdminDashboard() {
         .update({ disponibilidad: false })
         .eq("id", selectedEmployee.id);
 
-      // 📅 Si la tarea tiene fecha límite, se manda automáticamente al calendario
-      // como un evento de "Fecha Límite" (distinto de una reunión agendada por revisión).
-      if (newTaskDueDate && nuevaTarea?.id) {
-        // Ojo: construir el Date así (sin offset) hace que JS lo interprete en hora LOCAL
-        // del navegador; luego toISOString() lo convierte a UTC correctamente antes de
-        // guardarlo. Mandar el string "YYYY-MM-DDT09:00:00" directo a Supabase lo guarda
-        // como si 09:00 fuera UTC, y en zonas horarias negativas el evento cae de madrugada,
-        // fuera del rango visible (09:00–18:00) del calendario.
-        // Duración de 1 hora completa (igual que una reunión normal) para que el
-        // ícono circular del evento no quede más alto que su propia casilla en el
-        // calendario y se recorte contra el borde de la cuadrícula.
-        const dtInicioLimite = new Date(`${newTaskDueDate}T09:00:00`);
-        const dtFinLimite = new Date(`${newTaskDueDate}T10:00:00`);
-
-        const { data: nuevaReunion, error: calErr } = await supabase
-          .from("reuniones")
-          .insert({
-            // Título limpio (solo el nombre de la tarea): el ícono ⏳ y la etiqueta "Fecha
-            // Límite" ya se muestran aparte en la UI (badge, encabezado del popover, etc.)
-            // según `estado`, así que no hace falta — ni conviene — hornearlos en el texto.
-            titulo: newTaskTitle.trim(),
-            // Sin descripción: el título, el ícono ⏳ y la etiqueta "Fecha Límite" ya
-            // dejan claro de qué se trata — repetirlo en una descripción es redundante.
-            descripcion: null,
-            fecha_inicio: dtInicioLimite.toISOString(),
-            fecha_fin: dtFinLimite.toISOString(),
-            fecha: newTaskDueDate,
-            hora: "09:00 AM",
-            estado: "Fecha Límite",
-            empleado_id: selectedEmployee.id,
-            proyecto_id: targetProjectId,
-            tarea_id: nuevaTarea.id,
-            creado_por: currentAdminId || null,
-          })
-          .select("id")
-          .single();
-
-        if (calErr) {
-          console.error(
-            "No se pudo crear el evento de fecha límite en el calendario:",
-            calErr,
-          );
-          alert(
-            `La tarea se asignó, pero no se pudo agregar al calendario: ${calErr.message}`,
-          );
-        } else if (nuevaReunion?.id) {
-          // 📅 Con fecha límite sí hay algo que mostrar en el calendario: mandamos ahí
-          // directo, con el evento recién creado ya seleccionado/marcado.
-          window.location.href = `/admin/revisiones?highlightEventId=${nuevaReunion.id}`;
-          return;
-        }
-      }
-
+      // La fecha límite ya no se manda al calendario: el calendario es solo para
+      // reuniones y revisiones.
       setNewTaskTitle("");
       setNewTaskDescription("");
       setNewTaskPriority("Media");
@@ -1599,7 +1546,9 @@ export default function AdminDashboard() {
   const abrirEditarTarea = async (taskId: string | number) => {
     const { data, error } = await supabase
       .from("tareas")
-      .select("id, titulo, descripcion, prioridad, fecha_limite")
+      .select(
+        "id, titulo, descripcion, prioridad, fecha_limite, empleado_id, colaboradores_ids",
+      )
       .eq("id", taskId)
       .single();
     if (error || !data) {
@@ -1620,6 +1569,10 @@ export default function AdminDashboard() {
       fechaLimite: data.fecha_limite
         ? String(data.fecha_limite).slice(0, 10)
         : "",
+      empleadoId: data.empleado_id,
+      colaboradores: Array.isArray(data.colaboradores_ids)
+        ? data.colaboradores_ids
+        : [],
       subtareas: (subsData || []).map((s: any) => ({
         id: s.id,
         titulo: s.titulo,
@@ -1795,6 +1748,8 @@ export default function AdminDashboard() {
           descripcion: editTarea.descripcion.trim() || null,
           prioridad: editTarea.prioridad,
           fecha_limite: editTarea.fechaLimite || null,
+          colaboradores_ids:
+            editTarea.colaboradores.length > 0 ? editTarea.colaboradores : null,
         })
         .eq("id", editTarea.id);
       if (error) throw error;
@@ -3894,6 +3849,52 @@ export default function AdminDashboard() {
                     }
                     className="w-full border border-slate-300 rounded-xl p-1.5 text-slate-900 font-medium bg-white outline-none"
                   />
+                </div>
+              </div>
+
+              {/* Colaboradores: se pueden sumar más personas aunque no se hayan puesto al asignarla */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                  Colaboradores ({editTarea.colaboradores.length} seleccionados)
+                </label>
+                <div className="max-h-32 overflow-y-auto border border-slate-300 rounded-xl p-1 bg-white space-y-1">
+                  {employees
+                    .filter((emp) => emp.id !== editTarea.empleadoId)
+                    .map((emp) => {
+                      const marcado = editTarea.colaboradores.includes(emp.id);
+                      return (
+                        <label
+                          key={emp.id}
+                          className={`flex items-center justify-between p-1 rounded-lg cursor-pointer text-xs transition-colors ${
+                            marcado
+                              ? "bg-blue-50 border border-blue-200 text-blue-900 font-semibold"
+                              : "hover:bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={marcado}
+                              onChange={() =>
+                                setEditTarea({
+                                  ...editTarea,
+                                  colaboradores: marcado
+                                    ? editTarea.colaboradores.filter(
+                                        (id) => id !== emp.id,
+                                      )
+                                    : [...editTarea.colaboradores, emp.id],
+                                })
+                              }
+                              className="rounded text-blue-600 cursor-pointer"
+                            />
+                            {emp.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            {emp.role}
+                          </span>
+                        </label>
+                      );
+                    })}
                 </div>
               </div>
 
