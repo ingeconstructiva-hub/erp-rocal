@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Sidebar from "../../../components/Sidebar";
+import { useRouter } from "next/navigation";
+import { useNivelAdmin } from "../../../lib/useNivelAdmin";
 import { Icon } from "../../../components/icons";
 import { ModalOverlay } from "../../../components/ModalOverlay";
 import { supabase } from "../../../lib/supabaseClient";
@@ -148,7 +150,7 @@ const totalFila = (d: {
   (Number(d.extras) || 0) -
   (Number(d.descuentos) || 0);
 
-export default function NominasAsistenciaPage() {
+function NominasAsistenciaPage() {
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [semanas, setSemanas] = useState<RayaSemana[]>([]);
   const [detallePorSemana, setDetallePorSemana] = useState<
@@ -1540,4 +1542,15 @@ export default function NominasAsistenciaPage() {
       )}
     </div>
   );
+}
+
+// Coordinación no entra a Nóminas: se le manda al Panel Principal.
+export default function NominasProtegida() {
+  const nivel = useNivelAdmin();
+  const router = useRouter();
+  useEffect(() => {
+    if (nivel === "Coordinador") router.replace("/");
+  }, [nivel, router]);
+  if (nivel === undefined || nivel === "Coordinador") return null;
+  return <NominasAsistenciaPage />;
 }

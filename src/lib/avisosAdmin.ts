@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { asegurarSemanasRaya } from "./rayaAuto";
+import { nivelAdminActual } from "./useNivelAdmin";
 import { ROLES_CONVENIO } from "./convenios";
 import { ciclosBeca, montoMensual, rangoCiclo } from "./pagos";
 
@@ -39,8 +40,10 @@ const dinero = (n: number) =>
   `$${Number(n || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`;
 
 export async function cargarAvisos(): Promise<Aviso[]> {
+  // Coordinación no ve nada de nóminas: ni avisos de raya ni de becas.
+  const sinNomina = (await nivelAdminActual()) === "Coordinador";
   // Cada semana se abre sola la lista de raya (la actual y la anterior).
-  await asegurarSemanasRaya();
+  if (!sinNomina) await asegurarSemanasRaya();
   const ahora = Date.now();
   const hoy = hoyMx();
   const manana = sumaDias(hoy, 1);
@@ -341,5 +344,7 @@ export async function cargarAvisos(): Promise<Aviso[]> {
       });
   });
 
-  return avisos.sort((a, b) => b.fecha.localeCompare(a.fecha));
+  return avisos
+    .filter((a) => !sinNomina || a.tipo !== "raya")
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
 }

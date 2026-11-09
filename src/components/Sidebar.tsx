@@ -1,5 +1,6 @@
 'use client';
 
+import { useNivelAdmin } from '../lib/useNivelAdmin';
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -28,7 +29,10 @@ export default function Sidebar() {
   // (así "/admin/ruta-critica/tecnico" mantiene marcado "Ruta Crítica").
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
-  const activeIndex = NAV.findIndex(n => isActive(n.href));
+  // Coordinación no ve Nóminas (se oculta también mientras carga el nivel).
+  const nivel = useNivelAdmin();
+  const items = NAV.filter(n => !n.href.includes('nominas') || (nivel !== undefined && nivel !== 'Coordinador'));
+  const activeIndex = items.findIndex(n => isActive(n.href));
 
   // Desliza el indicador azul hasta la opción activa cuando cambia la ruta.
   useEffect(() => {
@@ -78,7 +82,7 @@ export default function Sidebar() {
           />
 
           <div className="relative space-y-0.5">
-            {NAV.map(({ href, label, icon }, i) => {
+            {items.map(({ href, label, icon }, i) => {
               const active = isActive(href);
               return (
                 <Link

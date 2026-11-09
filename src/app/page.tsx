@@ -12,6 +12,7 @@ import { ModalOverlay } from "../components/ModalOverlay";
 import { abrirArchivo } from "../lib/storageUrls";
 import { esArquitecto, estaEnObra, hoyMx } from "../lib/enObra";
 import { montoMensual } from "../lib/pagos";
+import { useNivelAdmin } from "../lib/useNivelAdmin";
 import { asegurarSemanasRaya } from "../lib/rayaAuto";
 import { EVENTO_NOTIF_RESUELTA } from "../components/CampanaNotificaciones";
 import { RestablecerContrasena } from "../components/RestablecerContrasena";
@@ -528,6 +529,8 @@ export default function AdminDashboard() {
   // 🔑 ID del administrador con sesión iniciada (quien asigna la tarea). Ya no se
   // pregunta por selector: siempre es quien está usando el panel en ese momento.
   const [currentAdminId, setCurrentAdminId] = useState<string>("");
+  // Coordinación ve el panel como Gerencia, salvo sueldos, becas y pagos.
+  const esCoordinadorWeb = useNivelAdmin() === "Coordinador";
 
   useEffect(() => {
     getCurrentAdminId().then((id) => {
@@ -1698,7 +1701,7 @@ export default function AdminDashboard() {
         {
           empleado_id: selectedEmployee.id,
           tipo_contrato: editFormData.rol,
-          ...(esConvenio(editFormData.rol)
+          ...(esConvenio(editFormData.rol) && !esCoordinadorWeb
             ? { remuneracion_o_beca: formattedSalary }
             : {}),
         },
@@ -1710,6 +1713,7 @@ export default function AdminDashboard() {
       if (
         !esConvenio(editFormData.rol) &&
         editFormData.nivel !== "Gerencia" &&
+        !esCoordinadorWeb &&
         editFormData.pagoDia !== pagoDiaInicial
       ) {
         const nuevoPago = Number(editFormData.pagoDia) || 0;
@@ -2588,20 +2592,22 @@ export default function AdminDashboard() {
                             selectedEmployee.role}
                         </p>
                       </div>
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">
-                          Sueldo / Beca Mensual
-                        </p>
-                        <p className="font-bold text-blue-700 mt-0.5 text-sm">
-                          <Icon
-                            name="banknote"
-                            size={13}
-                            className="inline -mt-0.5 mr-1 text-slate-400"
-                          />
-                          {selectedEmployee.contract?.stipendOrSalary ||
-                            "No asignado"}
-                        </p>
-                      </div>
+                      {!esCoordinadorWeb && (
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">
+                            Sueldo / Beca Mensual
+                          </p>
+                          <p className="font-bold text-blue-700 mt-0.5 text-sm">
+                            <Icon
+                              name="banknote"
+                              size={13}
+                              className="inline -mt-0.5 mr-1 text-slate-400"
+                            />
+                            {selectedEmployee.contract?.stipendOrSalary ||
+                              "No asignado"}
+                          </p>
+                        </div>
+                      )}
                       <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">
                           Fecha de Inicio
@@ -3345,7 +3351,7 @@ export default function AdminDashboard() {
               )}
 
               {/* Pago: convenio recibe beca mensual; planta, pago por día (raya semanal). */}
-              {esConvenio(editFormData.rol) ? (
+              {esCoordinadorWeb ? null : esConvenio(editFormData.rol) ? (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
                     Beca mensual (MXN)
