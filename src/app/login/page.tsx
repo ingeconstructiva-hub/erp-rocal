@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { VerContrasena } from "../../components/VerContrasena";
+import { guardarSesion } from "../../lib/movilSesion";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,6 +33,27 @@ export default function LoginPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        // Los administradores entran al panel; los demás integrantes (trabajadores,
+        // practicantes…) entran a su panel con el login de la extensión/app móvil
+        // (JWT). Solo se intenta si el motivo fue "no es administrador" o "no hay
+        // cuenta web", nunca si está bloqueado por intentos.
+        if (res.status === 401 || res.status === 403) {
+          const alt = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: userInput.trim(), password }),
+          });
+          const sesion = await alt.json().catch(() => ({}));
+          const rol = String(sesion?.employee?.rol || "")
+            .toLowerCase()
+            .trim();
+          const esAdmin = rol === "admin" || rol === "administrador";
+          if (alt.ok && sesion?.token && !esAdmin) {
+            guardarSesion(sesion.token, sesion.employee);
+            router.push("/trabajador");
+            return;
+          }
+        }
         throw new Error(data.error || "No se pudo iniciar sesión.");
       }
 

@@ -12,6 +12,8 @@ export async function proxy(request: NextRequest) {
   if (
     pathname.startsWith("/api/") ||
     pathname.startsWith("/movil") ||
+    // Panel del trabajador: su propia sesión por JWT (localStorage), como /movil.
+    pathname.startsWith("/trabajador") ||
     pathname === "/manifest.webmanifest"
   ) {
     return NextResponse.next();
