@@ -21,6 +21,7 @@ export interface TaskCardProps {
   subtareas?: { id: number | string; titulo: string; completada: boolean }[];
   onToggleSubtarea?: (id: number | string, completada: boolean) => void;
   onEdit?: () => void;
+  onComplete?: () => void;
 }
 
 export default function TaskCard({
@@ -40,6 +41,7 @@ export default function TaskCard({
   subtareas = [],
   onToggleSubtarea,
   onEdit,
+  onComplete,
 }: TaskCardProps) {
   const [abierta, setAbierta] = useState(false);
 
@@ -230,8 +232,18 @@ export default function TaskCard({
       )}
 
       {/* Acciones */}
-      {(onEdit || (status !== 'Completada' && onRequestExtension)) && (
+      {(onEdit || onComplete || (status !== 'Completada' && onRequestExtension)) && (
         <div className="pt-1.5 border-t border-slate-100 flex items-center justify-end gap-1">
+          {onComplete && status !== 'Completada' && (
+            <button
+              type="button"
+              onClick={onComplete}
+              className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2 py-1 rounded-lg text-[10px] transition-colors cursor-pointer"
+              title="Marcar la tarea como completada y mandarla al historial"
+            >
+              <Icon name="check-circle" size={11} /> Completada
+            </button>
+          )}
           {onEdit && (
             <button
               type="button"

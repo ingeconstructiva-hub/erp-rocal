@@ -1644,6 +1644,66 @@ export default function AdminDashboard() {
       .eq("id", tareaId);
   };
 
+  // Tarea a marcar como completada (pide confirmación en un modal).
+  const [completarTarea, setCompletarTarea] = useState<{
+    id: string | number;
+    title: string;
+  } | null>(null);
+  const [completando, setCompletando] = useState(false);
+
+  // Completar a mano (sin pasar por revisión): la tarea sale de las actividades
+  // en curso y queda en el Historial general (/admin/historial).
+  const handleCompletarTarea = async () => {
+    if (!completarTarea || !selectedEmployee) return;
+    setCompletando(true);
+    try {
+      const ahora = new Date().toISOString();
+      const { error } = await supabase
+        .from("tareas")
+        .update({
+          estado: "Completada",
+          porcentaje_avance: 100,
+          fecha_completado: ahora,
+        })
+        .eq("id", completarTarea.id);
+      if (error) throw error;
+
+      // El evento "Fecha Límite" del calendario y la solicitud de revisión
+      // pendiente (si la había) se cierran con la tarea.
+      await supabase
+        .from("reuniones")
+        .update({ estado: "Completada" })
+        .eq("tarea_id", completarTarea.id)
+        .neq("estado", "Completada");
+      await supabase
+        .from("notificaciones")
+        .update({ estado: "Aprobado" })
+        .eq("tarea_id", completarTarea.id)
+        .eq("estado", "Pendiente");
+
+      // Queda disponible solo si ya no le quedan tareas en curso.
+      const { data: pendientes } = await supabase
+        .from("tareas")
+        .select("id")
+        .eq("empleado_id", selectedEmployee.id)
+        .in("estado", ["En Proceso", "En Revisión", "Postergada"])
+        .neq("id", completarTarea.id);
+      if (!pendientes || pendientes.length === 0) {
+        await supabase
+          .from("empleados")
+          .update({ disponibilidad: true })
+          .eq("id", selectedEmployee.id);
+      }
+
+      setCompletarTarea(null);
+      await fetchDashboardData();
+    } catch (err: any) {
+      alert("No se pudo completar la tarea: " + (err.message || "Error"));
+    } finally {
+      setCompletando(false);
+    }
+  };
+
   const cerrarEditTarea = () => {
     setEditTarea(null);
     fetchDashboardData();
@@ -2469,51 +2529,72 @@ export default function AdminDashboard() {
                   <div className="flex-1 flex flex-col min-h-0">
                     <div className="flex justify-between items-center mb-1.5 shrink-0">
                       <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Historial de Actividades
+                        Actividades en curso
                       </h4>
                       <span className="text-[11px] text-slate-400">
-                        {selectedEmployee.taskHistory.length} Registradas
+                        {
+                          selectedEmployee.taskHistory.filter(
+                            (t) => t.status !== "Completada",
+                          ).length
+                        }{" "}
+                        activas ·{" "}
+                        <a
+                          href="/admin/historial"
+                          className="text-blue-600 hover:underline"
+                        >
+                          Ver completadas en el Historial
+                        </a>
                       </span>
                     </div>
 
                     <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 min-h-0">
-                      {selectedEmployee.taskHistory.length === 0 ? (
+                      {selectedEmployee.taskHistory.filter(
+                        (t) => t.status !== "Completada",
+                      ).length === 0 ? (
                         <p className="text-xs text-slate-400 text-center py-3">
-                          Sin actividades en el historial.
+                          Sin actividades pendientes.
                         </p>
                       ) : (
-                        selectedEmployee.taskHistory.map((task) => (
-                          <TaskCard
-                            key={task.id}
-                            id={task.id}
-                            title={task.title}
-                            projectName={task.project}
-                            description={task.description}
-                            assignedByName={
-                              task.assignedByName || "Administrador"
-                            }
-                            assignedToName={selectedEmployee.name}
-                            dueDate={task.dueDate}
-                            priority={task.priority || "Media"}
-                            status={task.status}
-                            progressPercent={task.progressPercent ?? 0}
-                            collaborators={task.collaborators || []}
-                            isCritical={task.isCritical}
-                            slackDays={task.slackDays}
-                            onRequestExtension={() =>
-                              handleExtendDeadline(
-                                task.id,
-                                task.title,
-                                task.dueDate,
-                              )
-                            }
-                            subtareas={task.subtareas}
-                            onToggleSubtarea={(id, hecha) =>
-                              alternarSubtarea(id, hecha, false)
-                            }
-                            onEdit={() => abrirEditarTarea(task.id)}
-                          />
-                        ))
+                        selectedEmployee.taskHistory
+                          .filter((t) => t.status !== "Completada")
+                          .map((task) => (
+                            <TaskCard
+                              key={task.id}
+                              id={task.id}
+                              title={task.title}
+                              projectName={task.project}
+                              description={task.description}
+                              assignedByName={
+                                task.assignedByName || "Administrador"
+                              }
+                              assignedToName={selectedEmployee.name}
+                              dueDate={task.dueDate}
+                              priority={task.priority || "Media"}
+                              status={task.status}
+                              progressPercent={task.progressPercent ?? 0}
+                              collaborators={task.collaborators || []}
+                              isCritical={task.isCritical}
+                              slackDays={task.slackDays}
+                              onRequestExtension={() =>
+                                handleExtendDeadline(
+                                  task.id,
+                                  task.title,
+                                  task.dueDate,
+                                )
+                              }
+                              subtareas={task.subtareas}
+                              onToggleSubtarea={(id, hecha) =>
+                                alternarSubtarea(id, hecha, false)
+                              }
+                              onEdit={() => abrirEditarTarea(task.id)}
+                              onComplete={() =>
+                                setCompletarTarea({
+                                  id: task.id,
+                                  title: task.title,
+                                })
+                              }
+                            />
+                          ))
                       )}
                     </div>
                   </div>
@@ -3695,6 +3776,41 @@ export default function AdminDashboard() {
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded-xl font-bold text-xs cursor-pointer transition-colors shadow-xs"
               >
                 {isDeleting ? "Eliminando..." : "Sí, Eliminar"}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {/* ✅ CONFIRMAR TAREA COMPLETADA */}
+      {completarTarea && (
+        <ModalOverlay onClose={() => setCompletarTarea(null)}>
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-slate-100 p-3 space-y-2">
+            <h3 className="text-sm font-bold text-slate-900">
+              Marcar como completada
+            </h3>
+            <p className="text-xs text-slate-600">
+              <strong className="text-slate-900">
+                “{completarTarea.title}”
+              </strong>{" "}
+              saldrá de las actividades en curso y se guardará en el Historial
+              general.
+            </p>
+            <div className="flex gap-1 pt-1.5 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setCompletarTarea(null)}
+                className="flex-1 bg-slate-100 text-slate-700 py-1.5 rounded-xl font-semibold text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={completando}
+                onClick={handleCompletarTarea}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white py-1.5 rounded-xl font-bold text-xs cursor-pointer"
+              >
+                {completando ? "Guardando..." : "Completar"}
               </button>
             </div>
           </div>
