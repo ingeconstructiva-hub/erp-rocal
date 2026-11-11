@@ -1657,6 +1657,33 @@ export default function AdminDashboard() {
     }
   };
 
+  // Tarea a eliminar (se asignó a quien no era): borra todo lo suyo.
+  const [eliminarTarea, setEliminarTarea] = useState<{
+    id: string | number;
+    title: string;
+  } | null>(null);
+  const [eliminandoTarea, setEliminandoTarea] = useState(false);
+
+  const handleEliminarTarea = async () => {
+    if (!eliminarTarea) return;
+    setEliminandoTarea(true);
+    try {
+      const res = await fetch("/api/tareas/eliminar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tareaId: eliminarTarea.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "No se pudo eliminar.");
+      setEliminarTarea(null);
+      await fetchDashboardData();
+    } catch (err: any) {
+      alert(err.message || "No se pudo eliminar la tarea.");
+    } finally {
+      setEliminandoTarea(false);
+    }
+  };
+
   const cerrarEditTarea = () => {
     setEditTarea(null);
     fetchDashboardData();
@@ -2542,6 +2569,12 @@ export default function AdminDashboard() {
                                 alternarSubtarea(id, hecha, false)
                               }
                               onEdit={() => abrirEditarTarea(task.id)}
+                              onDelete={() =>
+                                setEliminarTarea({
+                                  id: task.id,
+                                  title: task.title,
+                                })
+                              }
                               onComplete={() =>
                                 setCompletarTarea({
                                   id: task.id,
@@ -3731,6 +3764,40 @@ export default function AdminDashboard() {
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded-xl font-bold text-xs cursor-pointer transition-colors shadow-xs"
               >
                 {isDeleting ? "Eliminando..." : "Sí, Eliminar"}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {/* 🗑️ CONFIRMAR ELIMINAR TAREA */}
+      {eliminarTarea && (
+        <ModalOverlay onClose={() => setEliminarTarea(null)}>
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-slate-100 p-3 space-y-2">
+            <h3 className="text-sm font-bold text-slate-900">Eliminar tarea</h3>
+            <p className="text-xs text-slate-600">
+              Se borrará{" "}
+              <strong className="text-slate-900">
+                “{eliminarTarea.title}”
+              </strong>{" "}
+              para el responsable y los colaboradores, junto con sus subtareas,
+              revisiones y evidencias. Esto no se puede deshacer.
+            </p>
+            <div className="flex gap-1 pt-1.5 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEliminarTarea(null)}
+                className="flex-1 bg-slate-100 text-slate-700 py-1.5 rounded-xl font-semibold text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={eliminandoTarea}
+                onClick={handleEliminarTarea}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-1.5 rounded-xl font-bold text-xs cursor-pointer"
+              >
+                {eliminandoTarea ? "Eliminando..." : "Eliminar"}
               </button>
             </div>
           </div>

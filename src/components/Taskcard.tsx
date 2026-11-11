@@ -22,6 +22,7 @@ export interface TaskCardProps {
   onToggleSubtarea?: (id: number | string, completada: boolean) => void;
   onEdit?: () => void;
   onComplete?: () => void;
+  onDelete?: () => void;
 }
 
 export default function TaskCard({
@@ -42,6 +43,7 @@ export default function TaskCard({
   onToggleSubtarea,
   onEdit,
   onComplete,
+  onDelete,
 }: TaskCardProps) {
   const [abierta, setAbierta] = useState(false);
 
@@ -232,8 +234,18 @@ export default function TaskCard({
       )}
 
       {/* Acciones */}
-      {(onEdit || onComplete || (status !== 'Completada' && onRequestExtension)) && (
+      {(onEdit || onComplete || onDelete || (status !== 'Completada' && onRequestExtension)) && (
         <div className="pt-1.5 border-t border-slate-100 flex items-center justify-end gap-1">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="inline-flex items-center gap-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 font-medium px-1.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer mr-auto"
+              title="Eliminar esta tarea (por ejemplo, si se asignó a quien no era)"
+            >
+              <Icon name="trash" size={11} /> Eliminar
+            </button>
+          )}
           {onComplete && status !== 'Completada' && (
             <button
               type="button"
