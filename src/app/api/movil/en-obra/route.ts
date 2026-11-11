@@ -10,7 +10,7 @@ import { esArquitecto, hoyMx } from "../../../../lib/enObra";
 
 // Quién está en obra hoy (dentro del alcance del usuario) y cambio de estado de
 // un arquitecto. Ver quién está en obra lo puede cualquiera (dentro de su alcance); cambiar el
-// estado, solo Gerencia y Coordinación.
+// estado: cada arquitecto el suyo; el de otros, solo Gerencia y Coordinación.
 //  GET  → { enObra: [ids] }
 //  POST { empleadoId, enObra } → marca o quita el estado "en obra" de hoy.
 
@@ -37,11 +37,13 @@ export async function POST(req: Request) {
   const auth = await verificarMovil(req);
   if (!auth.ok) return auth.respuesta;
   const { usuario, equipoIds } = auth;
-  const sinPermiso = soloMandos(usuario);
-  if (sinPermiso) return sinPermiso;
-
   const b = await req.json().catch(() => ({}));
   const empleadoId = String(b?.empleadoId || "");
+  // Cada arquitecto cambia el suyo; el de otras personas, solo Gerencia/Coordinación.
+  if (empleadoId !== usuario.id) {
+    const sinPermiso = soloMandos(usuario);
+    if (sinPermiso) return sinPermiso;
+  }
   if (!empleadoId) {
     return NextResponse.json(
       { error: "Falta la persona." },

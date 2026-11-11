@@ -191,12 +191,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!screenContainer) return;
     if (!usuarioAutenticado?.id || !jwtToken) return renderLogin();
 
-    // Sesiones guardadas antes de que el login trajera el nivel: se completa una vez.
-    if (!usuarioAutenticado.nivel) {
+    // Nivel (sesiones guardadas antes de que el login lo trajera) y especialidad:
+    // los arquitectos tienen el botón "En obra / En oficina".
+    let soyArquitecto = false;
+    let enObraHoy = false;
+    {
       const r = await apiRequest(`${API_BASE_URL}/movil/equipo`, { method: 'GET' });
-      if (r?.ok && r.data?.yo?.nivel) {
-        usuarioAutenticado.nivel = r.data.yo.nivel;
-        chrome.storage.local.set({ session_user: usuarioAutenticado });
+      if (r?.ok) {
+        if (!usuarioAutenticado.nivel && r.data?.yo?.nivel) {
+          usuarioAutenticado.nivel = r.data.yo.nivel;
+          chrome.storage.local.set({ session_user: usuarioAutenticado });
+        }
+        const yo = (r.data?.empleados || []).find(e => e.id === usuarioAutenticado.id);
+        soyArquitecto = /arquitect/i.test(yo?.especialidad || '');
+      }
+      if (soyArquitecto) {
+        const o = await apiRequest(`${API_BASE_URL}/movil/en-obra`, { method: 'GET' });
+        enObraHoy = !!(o?.ok && (o.data?.enObra || []).includes(usuarioAutenticado.id));
       }
     }
 
@@ -238,6 +249,9 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       </div>
+
+      <!-- Arquitectos: dónde están hoy (se reinicia solo cada día) -->
+      ${soyArquitecto ? `<div class="obra-bar"><span class="obra-label">Hoy estoy:</span><button id="btn-obra" class="obra-btn${enObraHoy ? ' en-obra' : ''}" data-en-obra="${enObraHoy ? '1' : '0'}">${enObraHoy ? '🏗️ En obra' : '🏢 En oficina'}</button></div>` : ''}
 
       <!-- Widget de Timer Automático -->
       <div id="timer-box" class="timer-widget" style="display: ${isEstudiante ? 'block' : 'none'};">
@@ -507,6 +521,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnA = document.getElementById('tab-avisos');
     if (btnA) btnA.onclick = () => { activeMainTab = 'avisos'; mostrarAsignar = false; updateStyles(); loadData(); };
     actualizarContadorAvisos();
+    const btnObra = document.getElementById('btn-obra');
+    if (btnObra) btnObra.onclick = async () => {
+      if (btnObra.disabled) return;
+      const nuevo = btnObra.dataset.enObra !== '1';
+      btnObra.disabled = true;
+      const r = await apiRequest(`${API_BASE_URL}/movil/en-obra`, {
+        method: 'POST',
+        body: JSON.stringify({ empleadoId: usuarioAutenticado.id, enObra: nuevo })
+      });
+      btnObra.disabled = false;
+      if (r?.ok) {
+        btnObra.dataset.enObra = nuevo ? '1' : '0';
+        btnObra.classList.toggle('en-obra', nuevo);
+        btnObra.textContent = nuevo ? '🏗️ En obra' : '🏢 En oficina';
+      } else {
+        alert('No se pudo cambiar tu estado' + (r?.data?.error ? `: ${r.data.error}` : ''));
+      }
+    };
     const btnAsignar = document.getElementById('btn-asignar');
     if (btnAsignar) btnAsignar.onclick = () => { activeMainTab = 'tareas'; mostrarAsignar = true; updateStyles(); loadData(); };
 
