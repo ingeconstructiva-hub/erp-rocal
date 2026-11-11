@@ -8,15 +8,10 @@ import {
 } from "../../../../lib/movilAuth";
 
 // Asignar una tarea desde la PWA. Replica handleAssignTask del Panel Principal
-// (src/app/page.tsx): inserta la tarea, marca al responsable como ocupado y, si
-// tiene fecha límite, crea el evento "Fecha Límite" del calendario (09:00–10:00).
+// (src/app/page.tsx): inserta la tarea y marca al responsable como ocupado.
 // Solo se puede asignar a personas (y colaboradores) dentro del alcance.
 
 const PRIORIDADES = ["Baja", "Media", "Alta", "Urgente"];
-
-// México centro no tiene horario de verano desde 2022: UTC-6 fijo. En el
-// servidor (UTC) `new Date("…T09:00:00")` caería a las 3 a.m. en el calendario.
-const OFFSET_MX = "-06:00";
 
 const responder = (cuerpo: object, status: number) =>
   NextResponse.json(cuerpo, { status, headers: corsMovil });
@@ -92,28 +87,8 @@ export async function POST(req: Request) {
       .update({ disponibilidad: false })
       .eq("id", empleadoId);
 
-    let avisoCalendario: string | null = null;
-    if (fechaLimite) {
-      const { error: calErr } = await supabaseAdmin.from("reuniones").insert({
-        titulo,
-        descripcion: null,
-        fecha_inicio: new Date(`${fechaLimite}T09:00:00${OFFSET_MX}`).toISOString(),
-        fecha_fin: new Date(`${fechaLimite}T10:00:00${OFFSET_MX}`).toISOString(),
-        fecha: fechaLimite,
-        hora: "09:00 AM",
-        estado: "Fecha Límite",
-        empleado_id: empleadoId,
-        proyecto_id: proyectoId,
-        tarea_id: nueva.id,
-        creado_por: usuario.id,
-      });
-      if (calErr) {
-        avisoCalendario =
-          "La tarea se asignó, pero no se pudo agregar al calendario.";
-      }
-    }
-
-    return responder({ success: true, id: nueva.id, avisoCalendario }, 200);
+    // La fecha límite ya no se manda al calendario (solo reuniones y revisiones).
+    return responder({ success: true, id: nueva.id, avisoCalendario: null }, 200);
   } catch (err: any) {
     return responder(
       { error: err.message || "No se pudo asignar la tarea." },

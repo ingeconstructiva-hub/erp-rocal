@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let jwtToken = null;
   let activeMainTab = 'tareas';
   let activeSubFilter = 'por_hacer';
+  // Gerencia y Coordinación asignan tareas a su equipo desde la extensión.
+  let mostrarAsignar = false;
+  const esMando = () => ['gerencia', 'coordinador'].includes((usuarioAutenticado?.nivel || '').toLowerCase().trim());
 
   // ⏱️ Variables para el Timer Automático
   // 🏆 Evidencia pendiente de adjuntar por tarea (id -> {base64, nombre, tipo}) —
@@ -188,6 +191,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!screenContainer) return;
     if (!usuarioAutenticado?.id || !jwtToken) return renderLogin();
 
+    // Sesiones guardadas antes de que el login trajera el nivel: se completa una vez.
+    if (!usuarioAutenticado.nivel) {
+      const r = await apiRequest(`${API_BASE_URL}/movil/equipo`, { method: 'GET' });
+      if (r?.ok && r.data?.yo?.nivel) {
+        usuarioAutenticado.nivel = r.data.yo.nivel;
+        chrome.storage.local.set({ session_user: usuarioAutenticado });
+      }
+    }
+
     const rolLower = (usuarioAutenticado.rol || usuarioAutenticado.role || '').toLowerCase().trim();
 
     // Detectar categoría
@@ -263,6 +275,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <button id="sub-pendientes" class="subfilter-btn">Pendientes</button>
         <button id="sub-completadas" class="subfilter-btn">Completadas</button>
       </div>
+
+      <!-- Asignar tarea (solo Gerencia / Coordinación) -->
+      ${esMando() ? '<div id="asignar-bar" class="asignar-bar"><button id="btn-asignar" class="btn-action btn-asignar">➕ Asignar tarea a mi equipo</button></div>' : ''}
 
       <!-- Contenedor Dinámico -->
       <div id="c-contentList" class="content-list"></div>
@@ -486,12 +501,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnT = document.getElementById('tab-tareas');
     const btnR = document.getElementById('tab-reuniones');
     const btnP = document.getElementById('tab-recompensas');
-    if (btnT) btnT.onclick = () => { activeMainTab = 'tareas'; updateStyles(); loadData(); };
-    if (btnR) btnR.onclick = () => { activeMainTab = 'reuniones'; updateStyles(); loadData(); };
-    if (btnP) btnP.onclick = () => { activeMainTab = 'recompensas'; updateStyles(); loadData(); };
+    if (btnT) btnT.onclick = () => { activeMainTab = 'tareas'; mostrarAsignar = false; updateStyles(); loadData(); };
+    if (btnR) btnR.onclick = () => { activeMainTab = 'reuniones'; mostrarAsignar = false; updateStyles(); loadData(); };
+    if (btnP) btnP.onclick = () => { activeMainTab = 'recompensas'; mostrarAsignar = false; updateStyles(); loadData(); };
     const btnA = document.getElementById('tab-avisos');
-    if (btnA) btnA.onclick = () => { activeMainTab = 'avisos'; updateStyles(); loadData(); };
+    if (btnA) btnA.onclick = () => { activeMainTab = 'avisos'; mostrarAsignar = false; updateStyles(); loadData(); };
     actualizarContadorAvisos();
+    const btnAsignar = document.getElementById('btn-asignar');
+    if (btnAsignar) btnAsignar.onclick = () => { activeMainTab = 'tareas'; mostrarAsignar = true; updateStyles(); loadData(); };
 
     ['por_hacer', 'pendientes', 'completadas'].forEach(filter => {
       const btn = document.getElementById(`sub-${filter}`);
@@ -504,6 +521,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnR = document.getElementById('tab-reuniones');
     const btnP = document.getElementById('tab-recompensas');
     const subContainer = document.getElementById('subfilters-container');
+    const asignarBar = document.getElementById('asignar-bar');
+    if (asignarBar) asignarBar.style.display = (activeMainTab === 'tareas' && !mostrarAsignar) ? 'block' : 'none';
 
     const btnA = document.getElementById('tab-avisos');
 
@@ -511,7 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
       [btnT, btnR, btnP, btnA].forEach(b => b.classList.remove('active'));
       if (activeMainTab === 'tareas') {
         btnT.classList.add('active');
-        if (subContainer) subContainer.style.display = 'grid';
+        if (subContainer) subContainer.style.display = mostrarAsignar ? 'none' : 'grid';
       } else {
         ({ reuniones: btnR, recompensas: btnP, avisos: btnA })[activeMainTab]?.classList.add('active');
         if (subContainer) subContainer.style.display = 'none';
@@ -776,6 +795,78 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // 5. CARGA Y DIBUJO DE TAREAS Y REUNIONES
   // ==========================================
+  // ➕ Asignar una tarea a alguien del equipo (Gerencia / Coordinación). Usa la
+  // misma API que la app móvil, que limita a quién se puede asignar según el área.
+  async function renderAsignar(list) {
+    list.innerHTML = '<p style="text-align:center; font-size:11px; color:#64748b; margin-top: 12px;">Cargando tu equipo…</p>';
+    const res = await apiRequest(`${API_BASE_URL}/movil/equipo`, { method: 'GET' });
+    if (!res?.ok) {
+      list.innerHTML = '<p style="text-align:center; font-size:11px; color:#fca5a5; margin-top: 12px;">No se pudo cargar tu equipo.</p>';
+      return;
+    }
+    const personas = res.data?.empleados || [];
+    const proyectos = res.data?.proyectos || [];
+    const opcionesPersonas = personas.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nombre)}${p.id === usuarioAutenticado.id ? ' (yo)' : ''}</option>`).join('');
+    const opcionesProyectos = proyectos.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nombre)}</option>`).join('');
+
+    list.innerHTML = `
+      <form id="form-asignar" class="card-item" style="gap:6px;">
+        <div class="card-title" style="font-size:12px;">Nueva tarea</div>
+        <div class="form-group"><label class="form-label">Asignar a</label>
+          <select id="as-persona" class="form-input" required><option value="">Elegir persona…</option>${opcionesPersonas}</select></div>
+        <div class="form-group"><label class="form-label">Proyecto</label>
+          <select id="as-proyecto" class="form-input" required><option value="">Elegir proyecto…</option>${opcionesProyectos}</select></div>
+        <div class="form-group"><label class="form-label">Título</label>
+          <input id="as-titulo" class="form-input" type="text" maxlength="140" required placeholder="¿Qué hay que hacer?"></div>
+        <div class="form-group"><label class="form-label">Descripción (opcional)</label>
+          <textarea id="as-desc" class="form-input" rows="3" placeholder="Indicaciones"></textarea></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <div class="form-group"><label class="form-label">Prioridad</label>
+            <select id="as-prioridad" class="form-input"><option>Baja</option><option selected>Media</option><option>Alta</option><option>Urgente</option></select></div>
+          <div class="form-group"><label class="form-label">Fecha límite</label>
+            <input id="as-fecha" class="form-input" type="date"></div>
+        </div>
+        <div id="as-error" style="font-size:11px; color:#fca5a5; display:none;"></div>
+        <div style="display:flex; gap:6px;">
+          <button type="button" id="as-cancelar" class="btn-action" style="background:#1e293b; flex:1;">Cancelar</button>
+          <button type="submit" id="as-enviar" class="btn-action" style="flex:1;">Asignar</button>
+        </div>
+      </form>`;
+
+    document.getElementById('as-cancelar').onclick = () => { mostrarAsignar = false; updateStyles(); loadData(); };
+    document.getElementById('form-asignar').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('as-enviar');
+      const err = document.getElementById('as-error');
+      if (btn.disabled) return; // evita doble envío
+      btn.disabled = true;
+      btn.textContent = 'Asignando…';
+      err.style.display = 'none';
+      const r = await apiRequest(`${API_BASE_URL}/movil/tareas`, {
+        method: 'POST',
+        body: JSON.stringify({
+          empleadoId: document.getElementById('as-persona').value,
+          proyectoId: document.getElementById('as-proyecto').value,
+          titulo: document.getElementById('as-titulo').value.trim(),
+          descripcion: document.getElementById('as-desc').value.trim(),
+          prioridad: document.getElementById('as-prioridad').value,
+          fechaLimite: document.getElementById('as-fecha').value || null,
+        })
+      });
+      if (r?.ok) {
+        alert('Tarea asignada');
+        mostrarAsignar = false;
+        updateStyles();
+        loadData();
+      } else {
+        err.textContent = r?.data?.error || 'No se pudo asignar la tarea.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Asignar';
+      }
+    };
+  }
+
   async function loadData() {
     const list = document.getElementById('c-contentList');
     if (!list) return;
@@ -788,6 +879,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (activeMainTab === 'avisos') {
       renderAvisos(list);
+      return;
+    }
+
+    if (activeMainTab === 'tareas' && mostrarAsignar && esMando()) {
+      await renderAsignar(list);
       return;
     }
 
@@ -871,6 +967,17 @@ document.addEventListener('DOMContentLoaded', () => {
               ${t.revision_fecha ? `<div class="review-comment-date">${formatFechaHora(t.revision_fecha)}</div>` : ''}
             </div>` : '';
           if (porCorregir) item.classList.add('card-fix');
+          const subs = Array.isArray(t.subtareas) ? t.subtareas : [];
+          const subsHechas = subs.filter(s => s.completada).length;
+          const subsHtml = subs.length ? `
+            <div class="subtareas">
+              <div class="subtareas-titulo">☑ Subtareas ${subsHechas}/${subs.length}</div>
+              ${subs.map(s => `
+                <label class="subtarea${s.completada ? ' hecha' : ''}">
+                  <input type="checkbox" class="chk-subtarea" data-id="${escapeHtml(s.id)}" ${s.completada ? 'checked' : ''} ${(isDone || isReview) ? 'disabled' : ''}>
+                  <span>${escapeHtml(s.titulo)}</span>
+                </label>`).join('')}
+            </div>` : '';
           const fechaLim = t.fecha_limite ? `<span>📅 ${escapeHtml(t.fecha_limite)}</span>` : '<span>📅 Sin fecha límite</span>';
           const proyectoNombre = t.proyectos?.nombre || t.proyecto_nombre || 'General';
 
@@ -882,6 +989,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             ${desc}
             ${comentarioRevision}
+            ${subsHtml}
 
             <div class="card-footer">
               <div class="card-meta">
@@ -905,6 +1013,21 @@ document.addEventListener('DOMContentLoaded', () => {
           `;
 
           list.appendChild(item);
+        });
+
+        document.querySelectorAll('.chk-subtarea').forEach(chk => {
+          chk.onchange = async (e) => {
+            const el = e.target;
+            el.disabled = true;
+            const r = await apiRequest(`${API_BASE_URL}/subtareas`, {
+              method: 'PATCH',
+              body: JSON.stringify({ id: el.dataset.id, completada: el.checked })
+            });
+            if (!r?.ok) {
+              alert('No se pudo actualizar la subtarea' + (r?.data?.error ? `: ${r.data.error}` : ''));
+            }
+            loadData();
+          };
         });
 
         document.querySelectorAll('.file-evidencia').forEach(input => {

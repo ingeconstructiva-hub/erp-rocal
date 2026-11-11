@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ERP - Panel del Empleado",
-  "version": "1.7",
+  "version": "1.8",
   "description": "Extensión para gestión de tareas, temporizador de servicio y notificaciones de tareas y reuniones",
   "permissions": [
     "sidePanel",
